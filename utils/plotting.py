@@ -47,14 +47,49 @@ class HistoryPlotter():
             plt.legend(['train'], loc='upper right')
         plt.show()
 
-    def metric(self, metric: str = 'accuracy', val: bool = True, show_optimal: bool = False) -> None:
+    def metrics(self, val: bool = True) -> None:
+        """Plots the progress of the all the metrics used.
+
+        Args:
+            val (bool, optional): Plost the metric of the validation set. Defaults to True.
+        """
+        metrics = [x for x in self.history.keys() if x !=
+                   "loss" and x != "val_loss"]
+        train_metrics = [x for x in metrics if not x.startswith("val")]
+
+        # if val, then make sure "val_metric" is present
+        # Assuming the history.keys() contains loss and metrics
+        if val:
+            for m in train_metrics:
+                if not "val_" + m in metrics:
+                    raise KeyError(
+                        "Validation Metrics not found in history dict.")
+
+        n_rows = 1
+        n_cols = len(train_metrics)
+        fig = plt.figure(figsize=(n_cols*6, n_rows*4))
+        for i in range(n_rows*n_cols):
+            ax = fig.add_subplot(n_rows, n_cols, i+1)
+            ax.plot(self.history[train_metrics[i]])
+
+            ax.set_title("Model " + train_metrics[i].capitalize())
+            ax.set_xlabel('epoch')
+            ax.set_ylabel(train_metrics[i])
+
+            if val:
+                ax.plot(self.history["val_" + train_metrics[i]])
+                ax.legend(['train', 'val'], loc='lower right')
+            else:
+                ax.legend(['train'], loc='lower right')
+
+    def single_metric(self, metric: str = 'accuracy', val: bool = True, show_optimal: bool = False) -> None:
         """Plots the progress of the metric (such as accuracy, recall).
 
         Args:
-            metric (str, optional): the metric to plot
-            val (bool, optional): Plots the metric of the validation set
+            metric (str, optional): the metric to plot. Defaults to "accuracy".
+            val (bool, optional): Plots the metric of the validation set. Defaults to True.
             show_optimal (bool, optional): Draws a vertical dotted line at the optimal val_metric; works
-            only if 'val' is True
+            only if 'val' is True. Defaults to False.
         """
         plt.plot(self.history[metric])
         plt.title('Model ' + metric.capitalize())
@@ -94,3 +129,10 @@ class HistoryPlotter():
         else:
             plt.legend(['train'], loc='lower right')
         plt.show()
+
+
+if __name__ == "__main__":
+    history = np.load('history.npy', allow_pickle='TRUE').item()
+
+    hist_plotter = HistoryPlotter(history=history)
+    hist_plotter.metrics()
