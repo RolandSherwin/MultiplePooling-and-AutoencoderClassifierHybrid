@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 import mediapipe as mp
 import os
-import shutil
+import concurrent.futures
 
 
 def process_mask(image_path: str, annotation_path: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -92,39 +92,37 @@ def apply_mask(mask_img: np.ndarray, mask_annotation: np.ndarray, face_img: np.n
     return final_image
 
 
-def save(original_image_path: str, output_image: np.ndarray, mask_idx: int, dataset_dir: str, move_original: bool = False) -> None:
+def save(face_image: np.ndarray, face_image_filename: str, output_image: np.ndarray, mask_idx: int, output_resolution_fr: float, dataset_dir: str) -> None:
     """Saves the unmasked images to class0 folder and masked images to class1 folder. 
     This structure can be ready easily by'keras.preprocessing.image_dataset_from_directory()' function
 
     Args:
-        original_image_path (str): Path to the original image; to move to class0
-        output_image (np.ndarray): The created masked iamge; to be pasted in class1 dir
+        face_image (np.ndarray): The original face image.
+        face_imgae_filename (str): Filename of face image.
+        output_image (np.ndarray): The created masked image; to be pasted in class1 dir
         mask_idx (int): When multiple masks are applied, subscript the filename
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions; e.g., 0.5*(1024x1024)=512x512
         dataset_dir (str): The parent ds directory. Contains class0, class1 dirs
-        move_original (bool, optional): If True, the original_image is moved instead of copied. Defaults to False.
     """
-    filename = os.path.basename(original_image_path)
     if mask_idx >= 1:
-        parts = os.path.splitext(filename)
-        filename = parts[0] + f"_{mask_idx}" + parts[1]
+        parts = os.path.splitext(face_image_filename)
+        face_image_filename = parts[0] + f"_{mask_idx}" + parts[1]
 
-    # move(copy) original face_image from face_path to class0 dir
-    # move when mask_idx = 0 since we want to save only once
+    # Write the original image only once(since this is called more than once if more masks are present)
     if mask_idx == 0:
-        if move_original:
-            shutil.move(
-                original_image_path,
-                os.path.join(dataset_dir, "class0", filename))
-        else:
-            shutil.copyfile(
-                original_image_path,
-                os.path.join(dataset_dir, "class0", filename))
+        face_image = cv2.resize(face_image, (0, 0),
+                                fx=output_resolution_fr, fy=output_resolution_fr)
+        cv2.imwrite(os.path.join(dataset_dir, "class0", face_image_filename),
+                    face_image)
 
     # convert output_image into an image inside class1 dir
-    cv2.imwrite(os.path.join(dataset_dir, "class1", filename), output_image)
+    output_image = cv2.resize(output_image, (0, 0),
+                              fx=output_resolution_fr, fy=output_resolution_fr)
+    cv2.imwrite(os.path.join(dataset_dir, "class1", face_image_filename),
+                output_image)
 
 
-def single_batch(face_paths: list, mask_paths: list, mask_annotation_paths: list, dataset_dir: str) -> None:
+def single_batch(face_paths: list, mask_paths: list, mask_annotation_paths: list, dataset_dir: str, output_resolution_fr: float) -> None:
     """Given a list of paths to the face image, the mask image and mask_annotation. It applies all the masks to all the images
     and saves them in the dataset_dir
 
@@ -133,6 +131,7 @@ def single_batch(face_paths: list, mask_paths: list, mask_annotation_paths: list
         mask_paths (list): List of Paths to mask images.
         mask_annotation_paths (list): List of Paths to mask annotations.
         dataset_dir (str): Directory to which the outputs are stored.
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions; e.g., 0.5*(1024x1024)=512x512
     """
     # Get image and annotation of all the masks.
     mask_images = []
@@ -165,16 +164,25 @@ def single_batch(face_paths: list, mask_paths: list, mask_annotation_paths: list
                     # overwrite the output_img to apply masks to more than 1 face
                     output_img = apply_mask(
                         mask_img, mask_ann, output_img, face_ann)
-                    save(f_path, output_img, idx, dataset_dir)
+                    save(
+                        face_image=face_img,
+                        face_image_filename=os.path.basename(f_path),
+                        output_image=output_img,
+                        mask_idx=idx,
+                        output_resolution_fr=output_resolution_fr,
+                        dataset_dir=dataset_dir)
 
 
-def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: str) -> None:
+def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: str, output_resolution_fr: float = 0.5, n_images: int = 1000, n_process: int = 8) -> None:
     """The main function which processes the entire dataset.
 
     Args:
         face_ds_path (str): Path to Face images. Can have multiple sub dirs.
         mask_ds_path (str): Path to Mask images; no subdirs; images->.png annotation->.csv; same name for image and annotations.
         output_ds_path (str): Path to where the final dataset is created.
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions; e.g., 0.5*(1024x1024)=512x512
+        n_images (int): The number of face images to process.
+        n_process (int): Number of processos to spin up. Multiprocessing.
     """
     # convert to absolute paths
     if not os.path.isabs(output_ds_path):
@@ -192,11 +200,41 @@ def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: 
     if not os.path.isdir(class1):
         os.mkdir(class1)
 
-    # get list of all face_paths
+    if n_images < n_process:
+        raise ValueError("The n_images must be greater than n_process")
+
+    # face_paths: list[list]; each element is a list of images to be assinged for 1 process
+    # the image paths are put in a bucket, which is filled until it reaches the images_per_process
+    # then it is appended to face_paths
     face_paths = []
+    images_per_process = int(n_images/n_process)
+    bucket = []
+    bucket_counter = 0
+    item_per_bucket = 0
     for i, path in enumerate(glob.iglob(face_ds_path + '/**/*.png', recursive=True)):
-        # if i < 1:
-        face_paths.append(path)
+        if i == n_images:
+            # after reaching the end, dump the last bucket since it was kept getting filled.
+            if item_per_bucket > 0:
+                face_paths.append(bucket)
+            break
+        # each bucket can be filled up with the images_per_process items.
+        # if it reaches that threshold, append it to the main list and empty it.
+        if item_per_bucket >= images_per_process:
+            # but if its the last bucket, fill it up until we run out of images.
+            # this is the case when n_images % n_process != 0
+            if bucket_counter == n_process-1:
+                bucket.append(path)
+                item_per_bucket += 1
+                continue
+            # dump the bucket
+            face_paths.append(bucket)
+            bucket = []
+            item_per_bucket = 0
+            bucket_counter += 1
+
+        # add to bucket
+        bucket.append(path)
+        item_per_bucket += 1
 
     # get list of all mask_paths, mask_annotation_paths
     mask_paths = []
@@ -212,11 +250,18 @@ def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: 
     mask_annotation_paths.sort()
     assert len(mask_paths) == len(mask_annotation_paths)
 
-    # single batch
-    single_batch(face_paths, mask_paths, mask_annotation_paths, output_ds_path)
+    # Spawn multiple processes.
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures_objs = []
+        for i in range(n_process):
+            futures_objs.append(executor.submit(single_batch, face_paths[i], mask_paths, mask_annotation_paths,
+                                                output_ds_path, output_resolution_fr))
 
 
 if __name__ == "__main__":
     generate_masked_faces(face_ds_path="~/Downloads/datasets/MaskedFaces-source/faces",
                           mask_ds_path="~/Downloads/datasets/MaskedFaces-source/masks",
-                          output_ds_path="~/Downloads/datasets/MaskedFaces")
+                          output_ds_path="~/Downloads/datasets/MaskedFaces",
+                          output_resolution_fr=0.3,
+                          n_images=5000,
+                          n_process=10)
