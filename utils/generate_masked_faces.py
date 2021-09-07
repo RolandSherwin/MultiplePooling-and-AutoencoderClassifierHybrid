@@ -1,10 +1,13 @@
 import glob
+from re import S
 from typing import Tuple
 import cv2
 import numpy as np
 import mediapipe as mp
 import os
 import concurrent.futures
+import shutil
+from typing import List
 
 
 def process_mask(image_path: str, annotation_path: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -258,10 +261,97 @@ def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: 
                                                 output_ds_path, output_resolution_fr))
 
 
+def copy_excess_class0(face_ds_path: str, output_ds_path: str, output_resolution_fr: float, n_process: int = 6) -> None:
+    """If we use more masks, then len(class1) > len(class0); but if you have excess unprocessed original images, copy them to class0.
+    Thus making both class almost the same size.
+
+    Args:
+        face_ds_path (str): Path containing the original face images.
+        output_ds_path (str): Path containing the output dataset.
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions;
+    """
+    if not os.path.isabs(output_ds_path):
+        output_ds_path = os.path.expanduser(output_ds_path)
+    if not os.path.isabs(face_ds_path):
+        face_ds_path = os.path.expanduser(face_ds_path)
+
+    class0_path = os.path.join(output_ds_path, "class0")
+    class1_path = os.path.join(output_ds_path, "class1")
+
+    class0_len = len(
+        list(glob.glob(class0_path + '/**/*.png', recursive=True)))
+    class1_len = len(
+        list(glob.glob(class1_path + '/**/*.png', recursive=True)))
+
+    diff = class1_len - class0_len
+
+    # all the images to copy
+    to_copy = []
+    if diff > 0:
+        counter = 0
+        for path in glob.iglob(face_ds_path + '/**/*.png', recursive=True):
+            if counter < diff:
+                filename = os.path.basename(path)
+                dest = os.path.join(class0_path, filename)
+
+                # copy if dest does not exist
+                if not os.path.exists(dest):
+                    to_copy.append(path)
+                    counter += 1
+            else:
+                break
+    else:
+        print("Class0 has more images than Class1. Not moving any")
+
+    to_copy_len = len(to_copy)
+    print(f"{to_copy_len} unique images to copy")
+    images_per_process = int(to_copy_len/n_process)
+
+    list_of_list = []
+    for i in range(n_process):
+        start = i*images_per_process
+        end = (i+1)*images_per_process
+        list_of_list.append(to_copy[start:end])
+
+    # Spawn multiple processes.
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        futures_objs = []
+        for i in range(n_process):
+            futures_objs.append(executor.submit(
+                _resize_paste, list_of_list[i], class0_path, output_resolution_fr))
+
+
+def _resize_paste(input_paths: List[str], output_path: str, output_resolution_fr: float):
+    """Resize image in the path and paste it in the dest. 
+
+    Args:
+        input_path (str): List of input path of the images.
+        output_path (str): Paste to
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions;
+    """
+
+    for path in input_paths:
+        filename = os.path.basename(path)
+        print(f"Copying {filename}")
+        img = cv2.imread(path)
+        img = cv2.resize(img, (0, 0),
+                         fx=output_resolution_fr, fy=output_resolution_fr)
+        cv2.imwrite(os.path.join(output_path, filename), img)
+
+
 if __name__ == "__main__":
-    generate_masked_faces(face_ds_path="~/Downloads/datasets/MaskedFaces-source/faces",
-                          mask_ds_path="~/Downloads/datasets/MaskedFaces-source/masks",
-                          output_ds_path="~/Downloads/datasets/MaskedFaces",
-                          output_resolution_fr=0.3,
+    face_ds_path = "~/Downloads/datasets/MaskedFaces-source/faces"
+    mask_ds_path = "~/Downloads/datasets/MaskedFaces-source/masks"
+    output_ds_path = "~/Downloads/datasets/MaskedFaces"
+    output_resolution_fr = 0.15
+
+    generate_masked_faces(face_ds_path=face_ds_path,
+                          mask_ds_path=mask_ds_path,
+                          output_ds_path=output_ds_path,
+                          output_resolution_fr=output_resolution_fr,
                           n_images=5000,
                           n_process=10)
+
+    copy_excess_class0(face_ds_path=face_ds_path,
+                       output_ds_path=output_ds_path,
+                       output_resolution_fr=output_resolution_fr)
