@@ -1,6 +1,7 @@
 from typing import List, Tuple
 import matplotlib.pyplot as plt
 import numpy as np
+import re
 
 
 class HistoryPlotter():
@@ -23,9 +24,16 @@ class HistoryPlotter():
             key (str): The variable to plot
             val (bool, optional): Whether to plot validation. Defaults to True.
         """
+        max_metrics = ['accuracy', 'binary_accuracy', 'precision', 'recall']
+        
+        # Set y_limit to 0.5, 1; else every plot has different scaled
+        # convert binary_accuracy_11 to bianary_accuracy while checking
+        if re.sub(r"_[\d]+", "", key) in max_metrics:
+            ax.set_ylim(0.5, 1)
+        
         ax.plot(self.history[key])
         title = key.split("_")
-
+        
         # Join if more than 1 element
         if len(title) > 1:
             # .title() is like .capitalize() but does it for an entire sentence
