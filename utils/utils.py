@@ -23,7 +23,9 @@ def unzip_file(file_path: str) -> None:
         zip_file.extractall(dir_name)
 
 
-def get_kaggle_dataset(dataset: str, download_path: str = "~/Downloads/datasets/") -> None:
+def get_kaggle_dataset(
+    dataset: str, download_path: str = "~/Downloads/datasets/"
+) -> None:
     """Downloads the given Kaggle Dataset and unzips it to folder
 
     Args:
@@ -42,27 +44,33 @@ def get_kaggle_dataset(dataset: str, download_path: str = "~/Downloads/datasets/
     else:
         print("Downloading dataset")
         return_value = os.popen(
-            f'cd {download_path} && kaggle datasets download -d {dataset}').read()
+            f"cd {download_path} && kaggle datasets download -d {dataset}"
+        ).read()
 
-        unzip_file(os.path.join(download_path, dataset_name+".zip"))
+        unzip_file(os.path.join(download_path, dataset_name + ".zip"))
         print("Download Complete")
 
 
-def organize_face_mask_dataset(dataset_path: str, remove_augmented: bool = False) -> None:
+def organize_face_mask_dataset(
+    dataset_path: str, remove_augmented: bool = False
+) -> None:
     """Organizes the face_mask dataset to the form accepted by keras.preprocessing.image_dataset_from_directory()
 
     Args:
         path (str): Dataset path
-        remove_augmented (bool, optional): The dataset has pre-augmented images, pass True to remove them. Defaults to "~/Downloads/datasets/".
+        remove_augmented (bool, optional): The dataset has pre-augmented images, pass True to remove them.
+            Defaults to "~/Downloads/datasets/".
     """
     if not os.path.isabs(dataset_path):
         dataset_path = os.path.expanduser(dataset_path)
 
-    face_mask_ds_path = os.path.join(dataset_path, os.listdir(dataset_path)[
-                                     0])  # .../Face Mask Dataset/
+    face_mask_ds_path = os.path.join(
+        dataset_path, os.listdir(dataset_path)[0]
+    )  # .../Face Mask Dataset/
     if os.path.basename(face_mask_ds_path) != "Face Mask Dataset":
         raise ValueError(
-            "'Face Mask Dataset' directory not found, check if dataset_path is correct")
+            "'Face Mask Dataset' directory not found, check if dataset_path is correct"
+        )
 
     os.mkdir(os.path.join(dataset_path, "class0"))
     os.mkdir(os.path.join(dataset_path, "class1"))
@@ -75,8 +83,7 @@ def organize_face_mask_dataset(dataset_path: str, remove_augmented: bool = False
             elif os.path.basename(path) == "WithMask":
                 class_name = "class1"
             else:
-                raise ValueError(
-                    "'WithoutMask' and 'WithMask' dirs not found.")
+                raise ValueError("'WithoutMask' and 'WithMask' dirs not found.")
 
             # remove augmented
             if remove_augmented:

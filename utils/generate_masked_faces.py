@@ -10,7 +10,9 @@ import shutil
 from typing import List
 
 
-def process_mask(image_path: str, annotation_path: str) -> Tuple[np.ndarray, np.ndarray]:
+def process_mask(
+    image_path: str, annotation_path: str
+) -> Tuple[np.ndarray, np.ndarray]:
     """Get the mask_image and its corresponding annotation, mask_annotation
 
     Args:
@@ -21,23 +23,30 @@ def process_mask(image_path: str, annotation_path: str) -> Tuple[np.ndarray, np.
         Tuple[np.ndarray, np.ndarray]: Return the mask image and the matrix of annotation
     """
     mask_img = cv2.imread(image_path, -1)
-    mask_annotation = np.genfromtxt(annotation_path, delimiter=',', dtype=int)
+    mask_annotation = np.genfromtxt(annotation_path, delimiter=",", dtype=int)
     mask_annotation = np.delete(mask_annotation, [0, 3, 4, 5], axis=1)
 
     return mask_img, mask_annotation
 
 
-def process_face(face_landmarks, f_height: int, f_width: int, lanmark_indices: list = [227, 195, 447, 58, 288, 152]) -> list:
-    """Get the list of annotations(only for the indices given in landmark_indices) for all the faces for a single image (the face's landmarks are passed).
+def process_face(
+    face_landmarks,
+    f_height: int,
+    f_width: int,
+    lanmark_indices: list = [227, 195, 447, 58, 288, 152],
+) -> list:
+    """Get the list of annotations(only for the indices given in landmark_indices) for all the faces for a single image
+    (the face's landmarks are passed).
 
     Args:
         face_landmarks (mediapipe): The object containing the 468 landmarks for all the faces in a single image
         f_height (int): Face image's height
         f_width (int): Face image's width
-        lanmark_indices (list, optional): The handpicked index of annotations that corresponds to the annotations made on the mask. Defaults to [227, 195, 447, 58, 288, 152].
+        lanmark_indices (list, optional): The handpicked index of annotations that corresponds to the annotations made
+            on the mask. Defaults to [227, 195, 447, 58, 288, 152].
 
     Returns:
-        list: Each element in the list corresponds to the annotaions for a single face.
+        list: Each element in the list corresponds to the annotations for a single face.
     """
     # list of np array containing the annotations; 1 annotation array for each face
     annotation_list = []
@@ -57,8 +66,14 @@ def process_face(face_landmarks, f_height: int, f_width: int, lanmark_indices: l
     return annotation_list
 
 
-def apply_mask(mask_img: np.ndarray, mask_annotation: np.ndarray, face_img: np.ndarray, face_annotation: np.ndarray) -> np.ndarray:
-    """Warp the mask_img using the mask_annotation and face_annotation and apply it to the face_img. Return the final combined image.
+def apply_mask(
+    mask_img: np.ndarray,
+    mask_annotation: np.ndarray,
+    face_img: np.ndarray,
+    face_annotation: np.ndarray,
+) -> np.ndarray:
+    """Warp the mask_img using the mask_annotation and face_annotation and apply it to the face_img.
+    Returns the final combined image.
 
     Args:
         mask_img (np.ndarray): Image of the mask.
@@ -73,7 +88,8 @@ def apply_mask(mask_img: np.ndarray, mask_annotation: np.ndarray, face_img: np.n
     f_height, f_width = face_img.shape[:2]
     hom = cv2.findHomography(mask_annotation, face_annotation)[0]
     warped = cv2.warpPerspective(
-        mask_img, hom, (f_width, f_height), None, cv2.INTER_LINEAR, cv2.BORDER_CONSTANT)
+        mask_img, hom, (f_width, f_height), None, cv2.INTER_LINEAR, cv2.BORDER_CONSTANT
+    )
 
     # Get alpha channel (index 3)
     alpha_channel = warped[:, :, -1]
@@ -84,27 +100,33 @@ def apply_mask(mask_img: np.ndarray, mask_annotation: np.ndarray, face_img: np.n
     warped = cv2.cvtColor(warped, cv2.COLOR_BGRA2BGR)
 
     # Make the bg of mask tranparent
-    warped_multiplied = cv2.multiply(
-        alpha_channel_scaled, warped.astype("float"))
+    warped_multiplied = cv2.multiply(alpha_channel_scaled, warped.astype("float"))
     # Make the location of the mask on face transparent
-    image_multiplied = cv2.multiply(
-        face_img.astype(float), 1.0 - alpha_channel_scaled)
+    image_multiplied = cv2.multiply(face_img.astype(float), 1.0 - alpha_channel_scaled)
     # Add to get the final image
     final_image = cv2.add(warped_multiplied, image_multiplied).astype("uint8")
 
     return final_image
 
 
-def save(face_image: np.ndarray, face_image_filename: str, output_image: np.ndarray, mask_idx: int, output_resolution_fr: float, dataset_dir: str) -> None:
+def save(
+    face_image: np.ndarray,
+    face_image_filename: str,
+    output_image: np.ndarray,
+    mask_idx: int,
+    output_resolution_fr: float,
+    dataset_dir: str,
+) -> None:
     """Saves the unmasked images to class0 folder and masked images to class1 folder. 
     This structure can be ready easily by'keras.preprocessing.image_dataset_from_directory()' function
 
     Args:
         face_image (np.ndarray): The original face image.
-        face_imgae_filename (str): Filename of face image.
+        face_image_filename (str): Filename of face image.
         output_image (np.ndarray): The created masked image; to be pasted in class1 dir
         mask_idx (int): When multiple masks are applied, subscript the filename
-        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions; e.g., 0.5*(1024x1024)=512x512
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions;
+            e.g., 0.5*(1024x1024)=512x512
         dataset_dir (str): The parent ds directory. Contains class0, class1 dirs
     """
     if mask_idx >= 1:
@@ -113,28 +135,37 @@ def save(face_image: np.ndarray, face_image_filename: str, output_image: np.ndar
 
     # Write the original image only once(since this is called more than once if more masks are present)
     if mask_idx == 0:
-        face_image = cv2.resize(face_image, (0, 0),
-                                fx=output_resolution_fr, fy=output_resolution_fr)
-        cv2.imwrite(os.path.join(dataset_dir, "class0", face_image_filename),
-                    face_image)
+        face_image = cv2.resize(
+            face_image, (0, 0), fx=output_resolution_fr, fy=output_resolution_fr
+        )
+        cv2.imwrite(
+            os.path.join(dataset_dir, "class0", face_image_filename), face_image
+        )
 
     # convert output_image into an image inside class1 dir
-    output_image = cv2.resize(output_image, (0, 0),
-                              fx=output_resolution_fr, fy=output_resolution_fr)
-    cv2.imwrite(os.path.join(dataset_dir, "class1", face_image_filename),
-                output_image)
+    output_image = cv2.resize(
+        output_image, (0, 0), fx=output_resolution_fr, fy=output_resolution_fr
+    )
+    cv2.imwrite(os.path.join(dataset_dir, "class1", face_image_filename), output_image)
 
 
-def single_batch(face_paths: list, mask_paths: list, mask_annotation_paths: list, dataset_dir: str, output_resolution_fr: float) -> None:
-    """Given a list of paths to the face image, the mask image and mask_annotation. It applies all the masks to all the images
-    and saves them in the dataset_dir
+def single_batch(
+    face_paths: list,
+    mask_paths: list,
+    mask_annotation_paths: list,
+    dataset_dir: str,
+    output_resolution_fr: float,
+) -> None:
+    """Given a list of paths to the face image, the mask image and mask_annotation. It applies all the masks to all the
+    images and saves them in the dataset_dir.
 
     Args:
         face_paths (list): List of Paths to face images.
         mask_paths (list): List of Paths to mask images.
         mask_annotation_paths (list): List of Paths to mask annotations.
         dataset_dir (str): Directory to which the outputs are stored.
-        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions; e.g., 0.5*(1024x1024)=512x512
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions;
+            e.g., 0.5*(1024x1024)=512x512
     """
     # Get image and annotation of all the masks.
     mask_images = []
@@ -145,9 +176,8 @@ def single_batch(face_paths: list, mask_paths: list, mask_annotation_paths: list
         mask_annotations.append(ann)
 
     with mp.solutions.face_mesh.FaceMesh(
-            static_image_mode=True,
-            max_num_faces=1,
-            min_detection_confidence=0.5) as mesh_model:
+        static_image_mode=True, max_num_faces=1, min_detection_confidence=0.5
+    ) as mesh_model:
 
         # Apply mask for all images.
         for f_path in face_paths:
@@ -161,31 +191,42 @@ def single_batch(face_paths: list, mask_paths: list, mask_annotation_paths: list
 
             face_annotations = process_face(face_landmarks, f_height, f_width)
             # Apply all the types of masks for each face
-            for idx, (mask_img, mask_ann) in enumerate(zip(mask_images, mask_annotations)):
+            for idx, (mask_img, mask_ann) in enumerate(
+                zip(mask_images, mask_annotations)
+            ):
                 output_img = face_img.copy()
                 for face_ann in face_annotations:
                     # overwrite the output_img to apply masks to more than 1 face
-                    output_img = apply_mask(
-                        mask_img, mask_ann, output_img, face_ann)
+                    output_img = apply_mask(mask_img, mask_ann, output_img, face_ann)
                     save(
                         face_image=face_img,
                         face_image_filename=os.path.basename(f_path),
                         output_image=output_img,
                         mask_idx=idx,
                         output_resolution_fr=output_resolution_fr,
-                        dataset_dir=dataset_dir)
+                        dataset_dir=dataset_dir,
+                    )
 
 
-def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: str, output_resolution_fr: float = 0.5, n_images: int = 1000, n_process: int = 8) -> None:
+def generate_masked_faces(
+    face_ds_path: str,
+    mask_ds_path: str,
+    output_ds_path: str,
+    output_resolution_fr: float = 0.5,
+    n_images: int = 1000,
+    n_process: int = 8,
+) -> None:
     """The main function which processes the entire dataset.
 
     Args:
         face_ds_path (str): Path to Face images. Can have multiple sub dirs.
-        mask_ds_path (str): Path to Mask images; no subdirs; images->.png annotation->.csv; same name for image and annotations.
+        mask_ds_path (str): Path to Mask images; no subdirs; images->.png annotation->.csv;
+            same name for image and annotations.
         output_ds_path (str): Path to where the final dataset is created.
-        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions; e.g., 0.5*(1024x1024)=512x512
+        output_resolution_fr (float): Resize the final image to output_resolution_fr*original dimensions;
+            e.g., 0.5*(1024x1024)=512x512
         n_images (int): The number of face images to process.
-        n_process (int): Number of processos to spin up. Multiprocessing.
+        n_process (int): Number of processes to spin up. Multiprocessing.
     """
     # convert to absolute paths
     if not os.path.isabs(output_ds_path):
@@ -206,15 +247,15 @@ def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: 
     if n_images < n_process:
         raise ValueError("The n_images must be greater than n_process")
 
-    # face_paths: list[list]; each element is a list of images to be assinged for 1 process
+    # face_paths: list[list]; each element is a list of images to be assigned for 1 process
     # the image paths are put in a bucket, which is filled until it reaches the images_per_process
     # then it is appended to face_paths
     face_paths = []
-    images_per_process = int(n_images/n_process)
+    images_per_process = int(n_images / n_process)
     bucket = []
     bucket_counter = 0
     item_per_bucket = 0
-    for i, path in enumerate(glob.iglob(face_ds_path + '/**/*.png', recursive=True)):
+    for i, path in enumerate(glob.iglob(face_ds_path + "/**/*.png", recursive=True)):
         if i == n_images:
             # after reaching the end, dump the last bucket since it was kept getting filled.
             if item_per_bucket > 0:
@@ -225,7 +266,7 @@ def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: 
         if item_per_bucket >= images_per_process:
             # but if its the last bucket, fill it up until we run out of images.
             # this is the case when n_images % n_process != 0
-            if bucket_counter == n_process-1:
+            if bucket_counter == n_process - 1:
                 bucket.append(path)
                 item_per_bucket += 1
                 continue
@@ -257,13 +298,26 @@ def generate_masked_faces(face_ds_path: str, mask_ds_path: str, output_ds_path: 
     with concurrent.futures.ProcessPoolExecutor() as executor:
         futures_objs = []
         for i in range(n_process):
-            futures_objs.append(executor.submit(single_batch, face_paths[i], mask_paths, mask_annotation_paths,
-                                                output_ds_path, output_resolution_fr))
+            futures_objs.append(
+                executor.submit(
+                    single_batch,
+                    face_paths[i],
+                    mask_paths,
+                    mask_annotation_paths,
+                    output_ds_path,
+                    output_resolution_fr,
+                )
+            )
 
 
-def copy_excess_class0(face_ds_path: str, output_ds_path: str, output_resolution_fr: float, n_process: int = 6) -> None:
-    """If we use more masks, then len(class1) > len(class0); but if you have excess unprocessed original images, copy them to class0.
-    Thus making both class almost the same size.
+def copy_excess_class0(
+    face_ds_path: str,
+    output_ds_path: str,
+    output_resolution_fr: float,
+    n_process: int = 6,
+) -> None:
+    """If we use more masks, then len(class1) > len(class0); but if you have excess unprocessed original images,
+    copy them to class0. Thus making both class almost the same size.
 
     Args:
         face_ds_path (str): Path containing the original face images.
@@ -278,10 +332,8 @@ def copy_excess_class0(face_ds_path: str, output_ds_path: str, output_resolution
     class0_path = os.path.join(output_ds_path, "class0")
     class1_path = os.path.join(output_ds_path, "class1")
 
-    class0_len = len(
-        list(glob.glob(class0_path + '/**/*.png', recursive=True)))
-    class1_len = len(
-        list(glob.glob(class1_path + '/**/*.png', recursive=True)))
+    class0_len = len(list(glob.glob(class0_path + "/**/*.png", recursive=True)))
+    class1_len = len(list(glob.glob(class1_path + "/**/*.png", recursive=True)))
 
     diff = class1_len - class0_len
 
@@ -289,7 +341,7 @@ def copy_excess_class0(face_ds_path: str, output_ds_path: str, output_resolution
     to_copy = []
     if diff > 0:
         counter = 0
-        for path in glob.iglob(face_ds_path + '/**/*.png', recursive=True):
+        for path in glob.iglob(face_ds_path + "/**/*.png", recursive=True):
             if counter < diff:
                 filename = os.path.basename(path)
                 dest = os.path.join(class0_path, filename)
@@ -305,23 +357,28 @@ def copy_excess_class0(face_ds_path: str, output_ds_path: str, output_resolution
 
     to_copy_len = len(to_copy)
     print(f"{to_copy_len} unique images to copy")
-    images_per_process = int(to_copy_len/n_process)
+    images_per_process = int(to_copy_len / n_process)
 
     list_of_list = []
     for i in range(n_process):
-        start = i*images_per_process
-        end = (i+1)*images_per_process
+        start = i * images_per_process
+        end = (i + 1) * images_per_process
         list_of_list.append(to_copy[start:end])
 
     # Spawn multiple processes.
     with concurrent.futures.ProcessPoolExecutor() as executor:
         futures_objs = []
         for i in range(n_process):
-            futures_objs.append(executor.submit(
-                _resize_paste, list_of_list[i], class0_path, output_resolution_fr))
+            futures_objs.append(
+                executor.submit(
+                    _resize_paste, list_of_list[i], class0_path, output_resolution_fr
+                )
+            )
 
 
-def _resize_paste(input_paths: List[str], output_path: str, output_resolution_fr: float):
+def _resize_paste(
+    input_paths: List[str], output_path: str, output_resolution_fr: float
+):
     """Resize image in the path and paste it in the dest. 
 
     Args:
@@ -334,8 +391,7 @@ def _resize_paste(input_paths: List[str], output_path: str, output_resolution_fr
         filename = os.path.basename(path)
         print(f"Copying {filename}")
         img = cv2.imread(path)
-        img = cv2.resize(img, (0, 0),
-                         fx=output_resolution_fr, fy=output_resolution_fr)
+        img = cv2.resize(img, (0, 0), fx=output_resolution_fr, fy=output_resolution_fr)
         cv2.imwrite(os.path.join(output_path, filename), img)
 
 
@@ -345,13 +401,17 @@ if __name__ == "__main__":
     output_ds_path = "~/Downloads/datasets/MaskedFaces"
     output_resolution_fr = 0.15
 
-    generate_masked_faces(face_ds_path=face_ds_path,
-                          mask_ds_path=mask_ds_path,
-                          output_ds_path=output_ds_path,
-                          output_resolution_fr=output_resolution_fr,
-                          n_images=5000,
-                          n_process=10)
+    generate_masked_faces(
+        face_ds_path=face_ds_path,
+        mask_ds_path=mask_ds_path,
+        output_ds_path=output_ds_path,
+        output_resolution_fr=output_resolution_fr,
+        n_images=5000,
+        n_process=10,
+    )
 
-    copy_excess_class0(face_ds_path=face_ds_path,
-                       output_ds_path=output_ds_path,
-                       output_resolution_fr=output_resolution_fr)
+    copy_excess_class0(
+        face_ds_path=face_ds_path,
+        output_ds_path=output_ds_path,
+        output_resolution_fr=output_resolution_fr,
+    )
